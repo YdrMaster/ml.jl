@@ -1,5 +1,15 @@
+import Random
+
 Network{T} = Vector{Matrix{T}}
-Network(sizes::Vector{Int}) = [randn(sizes[i], sizes[i - 1] + 1) for i in 2:length(sizes)]
+
+"""
+    Network(sizes)
+
+用随机初始权构造神经网络
+每行是一个神经元
+"""
+rng = Random.MersenneTwister(1234);
+Network(sizes::Vector{Int}) = [Random.randn(rng, (sizes[i], sizes[i - 1] + 1)) for i in 2:length(sizes)]
 
 "神经网络的规模"
 structof(network::Network) =            # 神经网络的规模等于
@@ -34,8 +44,6 @@ function feedforward(network::Network, input::Vector)
     output
 end
 
-import Random
-
 """
     sgd!(network::Network, training_data, epochs, mini_batch_size, eta, test_data)
 
@@ -51,16 +59,18 @@ import Random
 """
 function sgd!(
     network::Network,
-    training_data::Vector{T},
+    training_data::Vector,
     epochs::Integer,
     mini_batch_size::Integer,
     η::Real,
     test_data::Union{Vector,Nothing}=nothing
-) where T <: Real
+)
+    η /= mini_batch_size
     # 分配内存
     ∇w = [zeros(size(w)) for w in network]
     as = [zeros(n) for n in structof(network)]
     zs = [zeros(n) for n in structof(network)]
+    δs = [zeros(n) for n in structof(network)]
     # 全部训练集使用 `epochs` 次
     for _ in 1:epochs
         Random.shuffle!(training_data)
@@ -69,17 +79,26 @@ function sgd!(
             fill!.(∇w, .0)
             # 用每组数据执行反向传播
             for (input, label) in training_data[(1:mini_batch_size) .+ (i - 1)mini_batch_size]
-                as[1][:] = input
-                zs[1][:] = sigmoid.(input)
-                backprop!(network, as, zs, label)
-                # ∇w .+= ∇w
+                zs[1][:] = input
+                as[1][:] = sigmoid.(input)
+                ∇w .+= backprop!(network, zs, as, label)
             end
             network .-= η * ∇w
         end
-    end
-
-    if test_data === nothing
-    else
+      
+        if test_data === nothing
+        else
+            n = length(test_data)
+            m = 0
+            for (input, label) in test_data
+                output = feedforward(network, input)
+                GR.plot(output[3])
+                if (argmax(output[end]) == argmax(label))
+                    m += 1
+                end
+            end
+            println("$(100m/n)%")
+        end
     end
 end
         
@@ -90,20 +109,30 @@ end
 
 ## 参数
 - `network`: 神经网络对象
-- `as`: 带权输入存储
-- `zs`: 输出存储
+- `zs`: 带权输入存储
+- `as`: 输出存储
 - `label`: 标签
 """
 function backprop!(
     network::Network,
-    as::Vector{Vector{T}},
     zs::Vector{Vector{T}},
+    as::Vector{Vector{T}},
     label::Vector{T}
 ) where T <: Real
+    result = [zeros(size(w)) for w in network]
     # 前向传播
     for (i, w) in enumerate(network)
-        as[i + 1][:] = w * [zs[i]; 1]
-        zs[i + 1][:] = sigmoid.(as[i + 1])
+        zs[i + 1][:] = w * [as[i]; 1]
+        as[i + 1][:] = sigmoid.(zs[i + 1])
     end
-    δL = (as[end] .- label) .* dsigmoid.(zs[end])
+    # 反向传播
+    δ = (as[end] .- label) .* dsigmoid.(zs[end])
+    result[end][:,1:end - 1] = δ * transpose(as[end - 1])
+    result[end][:,end] = δ
+    for i in 2:length(network)
+        δ = (transpose(network[end + 2 - i][:,1:end - 1]) * δ) .* dsigmoid.(zs[end + 1 - i])
+        result[end + 1 - i][:,1:end - 1] = δ * transpose(as[end - i])
+        result[end + 1 - i][:,end] = δ
+    end
+    result
 end
