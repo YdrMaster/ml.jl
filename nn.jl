@@ -8,8 +8,7 @@ Network{T} = Vector{Matrix{T}}
 用随机初始权构造神经网络
 每行是一个神经元
 """
-rng = Random.MersenneTwister(1234);
-Network(sizes::Vector{Int}) = [Random.randn(rng, (sizes[i], sizes[i - 1] + 1)) for i in 2:length(sizes)]
+Network(sizes::Vector{Int}) = [Random.randn(sizes[i], sizes[i - 1] + 1) for i in 2:length(sizes)]
 
 "神经网络的规模"
 structof(network::Network) =            # 神经网络的规模等于
@@ -37,9 +36,9 @@ dsigmoid(z::Real) = (exp_z = exp(-z); exp_z / (1 + exp_z)^2)
 - `input`: 输入向量
 """
 function feedforward(network::Network, input::Vector)
-    output = [sigmoid.(input)]
+    output = input
     for w in network
-        push!(output, sigmoid.(w * [output[end]; 1]))
+        output = sigmoid.(w * [output; 1])
     end
     output
 end
@@ -80,24 +79,17 @@ function sgd!(
             # 用每组数据执行反向传播
             for (input, label) in training_data[(1:mini_batch_size) .+ (i - 1)mini_batch_size]
                 zs[1][:] = input
-                as[1][:] = sigmoid.(input)
+                as[1][:] = input
                 ∇w .+= backprop!(network, zs, as, label)
             end
             network .-= η * ∇w
         end
-      
+        
         if test_data === nothing
         else
+            m = count(test_data) do (input, label) argmax(feedforward(network, input)) == argmax(label) end
             n = length(test_data)
-            m = 0
-            for (input, label) in test_data
-                output = feedforward(network, input)
-                GR.plot(output[3])
-                if (argmax(output[end]) == argmax(label))
-                    m += 1
-                end
-            end
-            println("$(100m/n)%")
+            println("$(100m / n)%($m / $n)")
         end
     end
 end
