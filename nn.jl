@@ -1,5 +1,6 @@
-import Random
+import Random, LinearAlgebra
 
+mat_mul! = LinearAlgebra.mul!
 Network{T} = Vector{Matrix{T}}
 
 """
@@ -67,22 +68,37 @@ function sgd!(
     η /= mini_batch_size
     # 分配内存
     ∇w = [zeros(size(w)) for w in network]
-    as = [zeros(n) for n in structof(network)]
-    zs = [zeros(n) for n in structof(network)]
-    δs = [zeros(n) for n in structof(network)]
+    network_struct = structof(network)
+    as = [ones(n + 1) for n in network_struct]
+    zs = [zeros(n) for n in network_struct[2:end]]
+    δs = [zeros(n) for n in network_struct[2:end]]
     # 全部训练集使用 `epochs` 次
     for _ in 1:epochs
         Random.shuffle!(training_data)
         # 训练集分为 `length(training_data) ÷ mini_batch_size` 批
         @time for i in 1:(length(training_data) ÷ mini_batch_size)
-            fill!.(∇w, .0)
             # 用每组数据执行反向传播
-            for (input, label) in training_data[(1:mini_batch_size) .+ (i - 1)mini_batch_size]
-                zs[1][:] = input
-                as[1][:] = input
-                ∇w .+= backprop!(network, zs, as, label)
+            for (input, label) in view(training_data, (1:mini_batch_size) .+ (i - 1)mini_batch_size)
+                as[1][1:end - 1] = input
+                # 前向传播
+                for (i, w) in enumerate(network)
+                    mat_mul!(zs[i], w, as[i])
+                    map!(sigmoid, as[i + 1], zs[i])
+                    map!(dsigmoid, δs[i], zs[i])
+                end
+                # 反向传播
+                @views @. δs[end] *= as[end][1:end - 1] - label
+                for i in length(network):-1:2
+                    @views δs[i - 1] .*= transpose(network[i][:,1:end - 1]) * δs[i]
+                end
+                for i in 1:length(∇w)
+                    mat_mul!(∇w[i], δs[i], transpose(as[i]), -η, 1)
+                end
             end
-            network .-= η * ∇w
+            for (w, x) in zip(network, ∇w) 
+                w .+= x 
+                x .= 0
+            end
         end
         
         if test_data === nothing
@@ -92,39 +108,4 @@ function sgd!(
             println("$(100m / n)%($m / $n)")
         end
     end
-end
-        
-"""
-    backprop!(network, as, zs)
-
-反向传播
-
-## 参数
-- `network`: 神经网络对象
-- `zs`: 带权输入存储
-- `as`: 输出存储
-- `label`: 标签
-"""
-function backprop!(
-    network::Network,
-    zs::Vector{Vector{T}},
-    as::Vector{Vector{T}},
-    label::Vector{T}
-) where T <: Real
-    result = [zeros(size(w)) for w in network]
-    # 前向传播
-    for (i, w) in enumerate(network)
-        zs[i + 1][:] = w * [as[i]; 1]
-        as[i + 1][:] = sigmoid.(zs[i + 1])
-    end
-    # 反向传播
-    δ = (as[end] .- label) .* dsigmoid.(zs[end])
-    result[end][:,1:end - 1] = δ * transpose(as[end - 1])
-    result[end][:,end] = δ
-    for i in 2:length(network)
-        δ = (transpose(network[end + 2 - i][:,1:end - 1]) * δ) .* dsigmoid.(zs[end + 1 - i])
-        result[end + 1 - i][:,1:end - 1] = δ * transpose(as[end - i])
-        result[end + 1 - i][:,end] = δ
-    end
-    result
 end

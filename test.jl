@@ -18,6 +18,6 @@ if (!@isdefined training_data)
     training_data = [(data[:,:,i][:], [j == label ? 1.0 : .0 for j in 0:9]) for (i, label) in enumerate(labels)]
 end
 # 构造神经网络
-network = Network([784, 40, 10])
+network = Network([784, 60, 10])
 # 训练网络
 sgd!(network, training_data[1:50000], 30, 10, 4, training_data[50001:end])
