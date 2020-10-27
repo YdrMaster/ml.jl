@@ -1,4 +1,4 @@
-import Random, LinearAlgebra
+import Random, LinearAlgebra, GR
 
 mat_mul! = LinearAlgebra.mul!
 Network{T} = Vector{Matrix{T}}
@@ -72,6 +72,8 @@ function sgd!(
     as = [ones(n + 1) for n in network_struct]
     zs = [zeros(n) for n in network_struct[2:end]]
     δs = [zeros(n) for n in network_struct[2:end]]
+    buffer_mat_mul = [zeros(n) for n in network_struct[2:end]]
+    errors = Float64[]
     # 全部训练集使用 `epochs` 次
     for _ in 1:epochs
         Random.shuffle!(training_data)
@@ -87,24 +89,30 @@ function sgd!(
                     map!(dsigmoid, δs[i], zs[i])
                 end
                 # 反向传播
-                @views @. δs[end] *= as[end][1:end - 1] - label
+                @views δs[end] .*= as[end][1:end - 1] .- label
                 for i in length(network):-1:2
-                    @views δs[i - 1] .*= transpose(network[i][:,1:end - 1]) * δs[i]
+                    @views mat_mul!(buffer_mat_mul[i - 1], transpose(network[i][:,1:end - 1]), δs[i])
+                    δs[i - 1] .*= buffer_mat_mul[i - 1]
                 end
                 for i in 1:length(∇w)
                     mat_mul!(∇w[i], δs[i], transpose(as[i]), -η, 1)
                 end
             end
             for (w, x) in zip(network, ∇w) 
-                w .+= x 
+                w .+= x
                 x .= 0
             end
         end
         
         if test_data === nothing
         else
-            m = count(test_data) do (input, label) argmax(feedforward(network, input)) == argmax(label) end
+            m = count(test_data) do (input, label)
+                a = [round(UInt8, x) for x in feedforward(network, input)]
+                a == label
+            end
             n = length(test_data)
+            push!(errors, m / n)
+            GR.plot(errors)
             println("$(100m / n)%($m / $n)")
         end
     end

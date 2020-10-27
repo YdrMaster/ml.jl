@@ -15,9 +15,9 @@ if (!@isdefined training_data)
         [read(file, UInt8) for i in 1:n]
     end
     # 构造监督训练集
-    training_data = [(data[:,:,i][:], [j == label ? 1.0 : .0 for j in 0:9]) for (i, label) in enumerate(labels)]
+    training_data = [(data[:,:,i][:], [(label ÷ n) & 1 for n in [1,2,4,8]]) for (i, label) in enumerate(labels)]
 end
 # 构造神经网络
-network = Network([784, 60, 10])
+network = Network([size(data, 1) * size(data, 2), 60, 20, 4])
 # 训练网络
-sgd!(network, training_data[1:50000], 30, 10, 4, training_data[50001:end])
+sgd!(network, training_data[1:50000], 100, 20, 5, training_data[50001:end])
