@@ -1,4 +1,4 @@
-import Random, LinearAlgebra, GR
+import Random, LinearAlgebra
 
 mat_mul! = LinearAlgebra.mul!
 Network{T} = Vector{Matrix{T}}
@@ -59,16 +59,18 @@ end
 """
 function sgd!(
     network::Network,
-    training_data::Vector,
+    training_data::Matrix,
     epochs::Integer,
     mini_batch_size::Integer,
     η::Real,
-    test_data::Union{Vector,Nothing}=nothing
+    test_data::Union{Matrix,Nothing}=nothing
 )
     η /= mini_batch_size
+    n = size(training_data, 2)
     # 分配内存
     ∇w = [zeros(size(w)) for w in network]
     network_struct = structof(network)
+    println(network_struct)
     as = [ones(n + 1) for n in network_struct]
     zs = [zeros(n) for n in network_struct[2:end]]
     δs = [zeros(n) for n in network_struct[2:end]]
@@ -76,12 +78,13 @@ function sgd!(
     errors = Float64[]
     # 全部训练集使用 `epochs` 次
     for _ in 1:epochs
-        Random.shuffle!(training_data)
+        indices = Random.shuffle(1:n)
         # 训练集分为 `length(training_data) ÷ mini_batch_size` 批
-        @time for i in 1:(length(training_data) ÷ mini_batch_size)
+        @time for i in 1:(n ÷ mini_batch_size)
+            @views _indices = indices[(1:mini_batch_size) .+ (i - 1)mini_batch_size]
             # 用每组数据执行反向传播
-            for (input, label) in view(training_data, (1:mini_batch_size) .+ (i - 1)mini_batch_size)
-                as[1][1:end - 1] = input
+            for index in _indices
+                @views as[1][1:end - 1] .= training_data[1:network_struct[1],index]
                 # 前向传播
                 for (i, w) in enumerate(network)
                     mat_mul!(zs[i], w, as[i])
@@ -89,7 +92,7 @@ function sgd!(
                     map!(dsigmoid, δs[i], zs[i])
                 end
                 # 反向传播
-                @views δs[end] .*= as[end][1:end - 1] .- label
+                @views δs[end] .*= as[end][1:end - 1] .- training_data[network_struct[1] + 1:end,index]
                 for i in length(network):-1:2
                     @views mat_mul!(buffer_mat_mul[i - 1], transpose(network[i][:,1:end - 1]), δs[i])
                     δs[i - 1] .*= buffer_mat_mul[i - 1]
@@ -104,15 +107,17 @@ function sgd!(
             end
         end
         
-        if test_data === nothing
-        else
-            m = count(test_data) do (input, label)
-                a = [round(UInt8, x) for x in feedforward(network, input)]
-                a == label
+        if test_data !== nothing
+            n = size(test_data, 2)
+            m = count(1:n) do i
+                # 二进制自动编码
+                # a = [round(UInt8, x) for x in feedforward(network, test_data[1:network_struct[1],i])]
+                # a == test_data[network_struct[1] + 1:end,i]
+                # 概率分布
+                argmax(feedforward(network, test_data[1:network_struct[1],i])) == argmax(test_data[network_struct[1] + 1:end,i])
             end
-            n = length(test_data)
             push!(errors, m / n)
-            GR.plot(errors)
+            # GR.plot(errors)
             println("$(100m / n)%($m / $n)")
         end
     end
