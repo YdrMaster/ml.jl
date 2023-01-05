@@ -17,7 +17,7 @@ structof(network::Network) =            # 神经网络的规模等于
      size(network[end], 1)]             # 最后一项的行数
 
 "获得 `l-1` 层的第 `k` 个神经元到 `l` 层第 `j` 个神经元的连接强度"
-w(network::Network, j::Integer, k::Integer, l::Integer) = 
+w(network::Network, j::Integer, k::Integer, l::Integer) =
     network[l - 1][j,k]
 
 "获得 `l` 层的第 `j` 个神经元的偏置"
@@ -97,16 +97,16 @@ function sgd!(
                     @views mat_mul!(buffer_mat_mul[i - 1], transpose(network[i][:,1:end - 1]), δs[i])
                     δs[i - 1] .*= buffer_mat_mul[i - 1]
                 end
-                for i in 1:length(∇w)
+                for i in eachindex(∇w)
                     mat_mul!(∇w[i], δs[i], transpose(as[i]), -η, 1)
                 end
             end
-            for (w, x) in zip(network, ∇w) 
+            for (w, x) in zip(network, ∇w)
                 w .+= x
                 x .= 0
             end
         end
-        
+
         if test_data !== nothing
             n = size(test_data, 2)
             m = count(1:n) do i
