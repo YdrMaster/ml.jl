@@ -1,4 +1,25 @@
-﻿import Random, .Iterators.partition
+﻿# 反向传播的 4 个公式：
+#
+# - BP0: δ{l,j} = ∂C/∂z{l,j}
+#   > 误差 δ 定义为第 l 层的第 j 个神经元激活前的输出对损失的影响
+#   > C: cost function 是一个向量输入的标量函数，或者说一个多元函数
+#
+# - BP1: δ{L,j} = ∂C/∂z{L,j} = ∂C/∂a{L,j} ⋅ ∂a{L,j}/∂z{L,j} = ∂C/∂a{L,j} ⋅ dσ(z{L,j})
+#   > 假设所有的激活函数都是 σ，输出层的误差可以计算出来
+#   - BP1a: δ{L} = ∇C .* dσ.(z{L})
+#
+# - BP2: δ{l} = [δ{l,j} for j in 0:J{l}]
+#             = [(δ{l+1} ⋅ w{l+1}[:,i]) ⋅ dσ(z{l,j}) for j in 0:J{l}]
+#             = [(w{l+1}[:,i] ⋅ δ{l+1}) for j in 0:J{l}] .* dσ.(z{L})
+#             = (w{l+1}'δ{l+1}) .* dσ.(z{L})
+#   > 其中每个 δ{l,j} 这样展开：
+#   > δ{l,j} = ∂C/∂z{l,j}                                              | 定义
+#   >        = Σ{i}(∂C/∂z{l+1,i} ⋅ ∂z{l+1,i}/∂a{l,j} ⋅ ∂a{l,j}/∂z{l,j}) | 链式法则
+#   >        = Σ{i}(δ{l+1,i} ⋅ w{l+1,i,j} ⋅ dσ(z{l,j}))                 | 代换
+#   >        = Σ{i}(δ{l+1,i} ⋅ w{l+1,i,j}) ⋅ dσ(z{l,j})                 | 非迭代项拿出求和符号
+#   >        = (δ{l+1} ⋅ w{l+1}[:,i]) ⋅ dσ(z{l,j})                      | 就是 l+1 层误差点乘 l+1 层权重矩阵的一列，再乘 σ'
+
+import Random, .Iterators.partition
 
 "神经网络"
 struct Network
@@ -7,13 +28,13 @@ struct Network
 end
 
 "sigmoid function"
-σ(z) = 1 / (1 + exp(-z))
+σ(z::Real) = 1 / (1 + exp(-z))
 
 "diff sigmoid function"
-dσ(z) = (x -> x * (1 - x))(σ(z));
+dσ(z::Real) = (x -> x * (1 - x))(σ(z));
 
 "前馈"
-feedforward(network::Network, input::Vector) = foldl((acc, w) -> σ.(w * [acc; 1]), network.weights; init=input)
+feedforward(network::Network, input::AbstractVector{<:Real}) = foldl((acc, w) -> σ.(w * [acc; 1]), network.weights; init=input)
 
 "数据集"
 DataSet = AbstractVector{Tuple{AbstractVector{<:Real},Real}}
@@ -49,13 +70,13 @@ function _update_mini_batch!(
     η /= length(mini_batch)
     ∇w = [zeros(size(w)) for w in network.weights]
     for (x, y) in mini_batch
-        ∇w .+= backprop(network, x, y)
+        ∇w .+= _backprop(network, x, y)
     end
     network.weights .-= η .* ∇w
 end
 
 "反向传播"
-function backprop(
+function _backprop(
     network::Network,
     x::AbstractVector{<:Real},
     y::Real,
